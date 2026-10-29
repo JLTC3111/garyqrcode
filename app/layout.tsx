@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { themeBootstrap } from "@/lib/preferences";
 import "./globals.css";
+import "@/shared/gary-apps/styles.css";
 import "./quick-feedback.css";
 
 export const metadata: Metadata = {
