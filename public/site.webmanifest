@@ -1,0 +1,22 @@
+{
+  "name": "Gary Customer Connect",
+  "short_name": "Gary",
+  "start_url": "/customer",
+  "display": "standalone",
+  "background_color": "#f7f8f2",
+  "theme_color": "#daf387",
+  "icons": [
+    {
+      "src": "/icons/android-chrome-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/android-chrome-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
