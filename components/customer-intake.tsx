@@ -6,7 +6,7 @@ import { buildQuickSubmission, defaultIntake, feedbackTopicLabels, ratingLabels,
 import { translate, type CopyValues, type Locale } from "@/lib/i18n";
 import { PREFERENCES_KEY, resolvePreferences, type Theme } from "@/lib/preferences";
 import QrShareCard from "@/components/qr-share-card";
-import { GaryAppsMenu } from "@/shared/gary-apps/gary-apps";
+import { CustomerServiceAppsMenu } from "./service-apps";
 
 type Copy = (text: string, values?: CopyValues) => string;
 const services = [
@@ -149,7 +149,7 @@ export default function CustomerIntake({ previewQrSrc, previewOnly = false }: { 
     <header className="site-header quick-header">
       {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- A full navigation intentionally starts a fresh form. */}
       <a className="brand" href="/" aria-label={t("Gary Customer Connect home")}><span className="brand-mark"><span/><span/><span/><span/></span><span className="brand-name">gary<span className="brand-period">.</span></span><span className="brand-divider"/><span className="brand-caption">{t("Feedback & support")}</span></a>
-      <div className="header-controls"><GaryAppsMenu language={locale} className="gary-apps-menu--customer"/><div className="language-switch" role="group" aria-label={t("Language")}><button type="button" lang="en" aria-label="Switch to English" aria-pressed={locale === "en"} onClick={() => preferences("en", theme)}>EN</button><button type="button" lang="vi" aria-label="Chuyển sang Tiếng Việt" aria-pressed={locale === "vi"} onClick={() => preferences("vi", theme)}>VI</button></div><button type="button" className="theme-toggle" aria-label={t(theme === "dark" ? "Switch to light mode" : "Switch to dark mode")} onClick={() => preferences(locale, theme === "dark" ? "light" : "dark")}>{theme === "dark" ? <Sun size={17}/> : <Moon size={17}/>}</button></div>
+      <div className="header-controls"><CustomerServiceAppsMenu language={locale} className="gary-apps-menu--customer"/><div className="language-switch" role="group" aria-label={t("Language")}><button type="button" lang="en" aria-label="Switch to English" aria-pressed={locale === "en"} onClick={() => preferences("en", theme)}>EN</button><button type="button" lang="vi" aria-label="Chuyển sang Tiếng Việt" aria-pressed={locale === "vi"} onClick={() => preferences("vi", theme)}>VI</button></div><button type="button" className="theme-toggle" aria-label={t(theme === "dark" ? "Switch to light mode" : "Switch to dark mode")} onClick={() => preferences(locale, theme === "dark" ? "light" : "dark")}>{theme === "dark" ? <Sun size={17}/> : <Moon size={17}/>}</button></div>
     </header>
     <main className="quick-main">
       <div className="quick-intro"><h1>{t(data.intent === "help" ? "How can we help?" : data.intent === "both" ? "Feedback & support" : "How did we do?")}</h1><span className="quick-time"><Clock3 size={14}/>{t("1–2 minutes")}</span></div>

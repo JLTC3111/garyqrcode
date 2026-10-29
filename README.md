@@ -76,7 +76,7 @@ Publish the existing Site through the Sites workflow when source repository acce
 
 The EN / VI switch translates the complete form, validation messages, help, information-use notice, and downloaded summaries. The sun/moon button switches appearance. Preferences persist, and switching preserves entered answers. Shared URLs may set `?lang=vi&theme=dark`; saved preferences and browser settings provide the fallback.
 
-The Gary network links open `https://garyhome.vn`, `https://visa.garyhome.vn`, and `https://agency.garyhome.vn` in separate tabs.
+The Gary network links open `https://garyhome.vn`, `https://visa.garyhome.vn`, and `https://jobs.garyhome.vn` in separate tabs.
 
 ## Staff QR management
 
@@ -101,3 +101,7 @@ On a fresh local database, also apply `drizzle/0001_peaceful_stick.sql` after th
 
 The offline preview command also creates `outputs/staff-preview.html` to inspect the bilingual sign-in screen. It cannot sign in to the undeployed application.
 # garyqrcode
+
+## Shared services menu
+
+Customer Connect uses the centrally released Gary apps menu from Home, with a local fallback for unavailable shared assets. Language and theme follow the form, all service links open their external sites, and mobile taps remain active through touch blur. See [`shared/gary-apps/README.md`](shared/gary-apps/README.md) for update and fallback behavior.
