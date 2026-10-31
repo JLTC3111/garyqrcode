@@ -1,28 +1,17 @@
 import assert from "node:assert/strict";
-import { beforeEach, test } from "node:test";
-import { DatabaseSync } from "node:sqlite";
+import { after, beforeEach, test } from "node:test";
+import { createTestDatabase, databaseTestPlugin } from "./helpers/postgres.mjs";
 import { readFile, mkdir } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { build } from "esbuild";
 import ts from "typescript";
 import { runInNewContext } from "node:vm";
 
-const database = new DatabaseSync(":memory:");
-database.exec(await readFile(new URL("../drizzle/0000_absent_bucky.sql", import.meta.url), "utf8"));
-class LocalD1Statement {
-  constructor(sql, params = []) { this.sql = sql; this.params = params; }
-  bind(...params) { return new LocalD1Statement(this.sql, params); }
-  async raw() { const statement = database.prepare(this.sql); statement.setReturnArrays(true); return statement.all(...this.params); }
-  async all() { return { success: true, results: database.prepare(this.sql).all(...this.params), meta: {} }; }
-  async run() { return { success: true, results: [], meta: database.prepare(this.sql).run(...this.params) }; }
-}
-const binding = { prepare: (sql) => new LocalD1Statement(sql) };
-globalThis.__intakeTestEnv = { DB: binding };
+const { database, db } = await createTestDatabase();
+globalThis.__intakeTestDb = db;
+after(() => database.close());
 await mkdir(new URL("../.sites-runtime/qa/", import.meta.url), { recursive: true });
-await build({ entryPoints: ["app/api/submissions/route.ts"], outfile: ".sites-runtime/qa/route.mjs", bundle: true, platform: "node", format: "esm", target: "es2022", plugins: [{ name: "local-d1-test-binding", setup(builder) {
-  builder.onResolve({ filter: /^cloudflare:workers$/ }, () => ({ path: "env", namespace: "local-d1" }));
-  builder.onLoad({ filter: /.*/, namespace: "local-d1" }, () => ({ contents: "export const env = globalThis.__intakeTestEnv;", loader: "js" }));
-} }] });
+await build({ entryPoints: ["app/api/submissions/route.ts"], outfile: ".sites-runtime/qa/route.mjs", bundle: true, platform: "node", format: "esm", target: "es2022", plugins: [databaseTestPlugin("__intakeTestDb")] });
 await build({ entryPoints: ["lib/intake.ts"], outfile: ".sites-runtime/qa/intake.mjs", bundle: true, platform: "node", format: "esm", target: "es2022" });
 const { POST } = await import("../.sites-runtime/qa/route.mjs");
 await build({ entryPoints: ["lib/i18n.ts", "lib/preferences.ts"], outdir: ".sites-runtime/qa", bundle: true, platform: "node", format: "esm", outExtension: { ".js": ".mjs" }, target: "es2022" });
@@ -31,19 +20,19 @@ const { resolvePreferences, themeBootstrap } = await import("../.sites-runtime/q
 const { defaultIntake, buildQuickSubmission, draftSchema, validateIntake, receiptText, serviceLabels, intentLabels, ratingLabels, feedbackTopicLabels } = await import("../.sites-runtime/qa/intake.mjs");
 const payload = (overrides = {}) => ({ ...defaultIntake, intent: "both", services: ["home", "job", "paperwork"], repName: "Jamie Example", repCompany: "Example Agency", repEmail: "jamie@example.com", overallRating: 5, communicationRating: 4, helpfulnessRating: 5, feedback: "Clear explanations and thoughtful support.", firstName: "Taylor", lastName: "Example", email: "taylor@example.com", location: "Example City", homeGoal: "Rent a home", homeBudget: "USD 1,200/month", jobRole: "Customer service", jobType: "Full-time", paperworkType: "Employment documents", timeline: "Within a month", details: "I need help finding a home and a job and understanding the forms.", consent: true, ...overrides });
 const send = (data, key = randomUUID(), headers = {}) => POST(new Request("https://gary.example/api/submissions", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": key, Origin: "https://gary.example", ...headers }, body: JSON.stringify(data) }));
-const rows = () => database.prepare("SELECT * FROM customer_submissions").all();
-beforeEach(() => { database.exec("DELETE FROM customer_submissions"); globalThis.__intakeTestEnv.DB = binding; });
+const rows = async () => (await database.query("SELECT * FROM customer_connect.customer_submissions")).rows;
+beforeEach(async () => { await database.exec("DELETE FROM customer_connect.customer_submissions"); globalThis.__intakeTestDb = db; });
 
 test("a combined housing, job, and paperwork request persists rep details and feedback", async () => {
   const response = await send(payload());
   assert.equal(response.status, 201);
   const result = await response.json();
   assert.match(result.reference, /^GARY-[A-F0-9]{12}$/);
-  const [row] = rows();
+  const [row] = await rows();
   assert.equal(row.representative_name, "Jamie Example");
   assert.equal(row.customer_email, "taylor@example.com");
   assert.equal(row.overall_rating, 5);
-  const saved = JSON.parse(row.payload);
+  const saved = row.payload;
   assert.deepEqual(saved.services, ["home", "job", "paperwork"]);
   assert.equal(saved.homeBudget, "USD 1,200/month");
   assert.equal(saved.jobRole, "Customer service");
@@ -54,7 +43,7 @@ test("a combined housing, job, and paperwork request persists rep details and fe
 test("feedback-only submissions need no new service request", async () => {
   const response = await send(payload({ intent: "feedback", details: "", services: ["job"] }));
   assert.equal(response.status, 201);
-  const saved = JSON.parse(rows()[0].payload);
+  const saved = (await rows())[0].payload;
   assert.equal(saved.homeGoal, ""); assert.equal(saved.jobRole, ""); assert.equal(saved.timeline, "");
   assert.equal(saved.overallRating, 5);
 });
@@ -63,22 +52,22 @@ test("quick feedback saves with only a representative, service, and one rating",
   const data = buildQuickSubmission({ ...defaultIntake, repName: "Jamie Example", services: ["home"], overallRating: 5 }, "", "");
   assert.deepEqual(validateIntake(data), {});
   assert.equal((await send(data)).status, 201);
-  const [row] = rows();
+  const [row] = await rows();
   assert.equal(row.customer_name, "");
   assert.equal(row.customer_email, "");
   assert.equal(row.customer_phone, "");
   assert.equal(row.overall_rating, 5);
-  assert.equal(JSON.parse(row.payload).feedback, "");
+  assert.equal(row.payload.feedback, "");
 });
 
 test("quick feedback topics persist and reject unsupported or duplicate choices", async () => {
   const data = buildQuickSubmission({ ...defaultIntake, repName: "Jamie Example", services: ["job"], overallRating: 2, feedbackTopics: ["communication", "speed"] }, "Please reply sooner.", "");
   assert.equal((await send(data)).status, 201);
-  assert.deepEqual(JSON.parse(rows()[0].payload).feedbackTopics, ["communication", "speed"]);
+  assert.deepEqual((await rows())[0].payload.feedbackTopics, ["communication", "speed"]);
   for (const feedbackTopics of [["unknown"], ["speed", "speed"]]) assert.equal((await send({ ...data, feedbackTopics })).status, 400);
   const receipt = receiptText(data, "GARY-TOPICS", "vi");
   for (const text of [translate("vi", "Could be improved"), translate("vi", "Clear communication"), translate("vi", "Response time"), "Please reply sooner."]) assert.ok(receipt.includes(text), text);
-  assert.equal(rows().length, 1);
+  assert.equal((await rows()).length, 1);
 });
 
 test("follow-up needs one email or phone and opt-out clears hidden personal details", async () => {
@@ -99,8 +88,8 @@ test("follow-up needs one email or phone and opt-out clears hidden personal deta
 test("quick help needs a request and contact but does not require a name or rating", async () => {
   const draft = { ...defaultIntake, intent: "help", repName: "Jamie Example", services: ["home"] };
   assert.equal((await send(buildQuickSubmission(draft, "I need help renting a home.", "taylor@example.com"))).status, 201);
-  assert.equal(rows()[0].customer_name, "");
-  assert.equal(rows()[0].overall_rating, null);
+  assert.equal((await rows())[0].customer_name, "");
+  assert.equal((await rows())[0].overall_rating, null);
   assert.equal((await send(buildQuickSubmission(draft, "", "taylor@example.com"))).status, 400);
   assert.equal((await send(buildQuickSubmission(draft, "I need help renting a home.", ""))).status, 400);
   const both = buildQuickSubmission({ ...draft, intent: "both", overallRating: 4 }, "Help with the next step, please.", "taylor@example.com");
@@ -112,8 +101,8 @@ test("quick help needs a request and contact but does not require a name or rati
 test("help-only submissions work without ratings and retain only selected service details", async () => {
   const response = await send(payload({ intent: "help", overallRating: 0, services: ["paperwork"] }));
   assert.equal(response.status, 201);
-  const saved = JSON.parse(rows()[0].payload);
-  assert.equal(rows()[0].overall_rating, null);
+  const saved = (await rows())[0].payload;
+  assert.equal((await rows())[0].overall_rating, null);
   assert.equal(saved.feedback, ""); assert.equal(saved.communicationRating, 0);
   assert.equal(saved.homeBudget, ""); assert.equal(saved.jobRole, "");
   assert.equal(saved.paperworkType, "Employment documents");
@@ -123,12 +112,12 @@ test("incomplete or invalid submissions never reach the database", async () => {
   for (const overrides of [{ services: [] }, { repName: "" }, { overallRating: 0 }, { details: "  " }, { consent: false }, { email: "invalid" }, { contactPreference: "phone", phone: "123" }, { website: "bot.example" }]) {
     assert.equal((await send(payload(overrides))).status, 400, JSON.stringify(overrides));
   }
-  assert.equal(rows().length, 0);
+  assert.equal((await rows()).length, 0);
 });
 
 test("phone and text are usable without an email address", async () => {
   for (const contactPreference of ["phone", "text"]) assert.equal((await send(payload({ email: "", phone: "+1 202 555 0144", contactPreference }))).status, 201);
-  assert.equal(rows().length, 2);
+  assert.equal((await rows()).length, 2);
 });
 
 test("retries and concurrent double-clicks save one submission", async () => {
@@ -137,10 +126,10 @@ test("retries and concurrent double-clicks save one submission", async () => {
   assert.ok(results.every((result) => [200, 201].includes(result.status)));
   const references = await Promise.all(results.map(async (result) => (await result.json()).reference));
   assert.equal(references[0], references[1]);
-  assert.equal(rows().length, 1);
+  assert.equal((await rows()).length, 1);
   assert.equal((await send(payload(), key)).status, 200);
   assert.equal((await send(payload({ repName: "Another Example" }), key)).status, 409);
-  assert.equal(rows().length, 1);
+  assert.equal((await rows()).length, 1);
 });
 
 test("cross-site, malformed, and oversized requests are rejected", async () => {
@@ -150,11 +139,11 @@ test("cross-site, malformed, and oversized requests are rejected", async () => {
   assert.equal((await send(payload(), "invalid-key")).status, 400);
   assert.equal((await send(payload({ details: "x".repeat(31_000) }))).status, 413);
   assert.equal((await POST(new Request("https://gary.example/api/submissions", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": randomUUID() }, body: "{" }))).status, 400);
-  assert.equal(rows().length, 0);
+  assert.equal((await rows()).length, 0);
 });
 
 test("storage failure returns an honest retry message, without a success reference", async () => {
-  globalThis.__intakeTestEnv.DB = undefined;
+  globalThis.__intakeTestDb = undefined;
   const response = await send(payload());
   assert.equal(response.status, 503);
   assert.equal((await response.json()).reference, undefined);

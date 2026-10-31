@@ -1,11 +1,13 @@
-import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { integer, jsonb, pgSchema, text, timestamp } from "drizzle-orm/pg-core";
 
-export const customerSubmissions = sqliteTable("customer_submissions", {
+export const customerConnect = pgSchema("customer_connect");
+
+export const customerSubmissions = customerConnect.table("customer_submissions", {
   id: text("id").primaryKey(),
   reference: text("reference").notNull().unique(),
-  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   intent: text("intent").notNull(),
-  services: text("services", { mode: "json" }).$type<string[]>().notNull(),
+  services: jsonb("services").$type<string[]>().notNull(),
   representativeName: text("representative_name").notNull(),
   representativeCompany: text("representative_company").notNull(),
   representativeEmail: text("representative_email").notNull(),
@@ -16,10 +18,10 @@ export const customerSubmissions = sqliteTable("customer_submissions", {
   customerPhone: text("customer_phone").notNull(),
   contactPreference: text("contact_preference").notNull(),
   overallRating: integer("overall_rating"),
-  payload: text("payload", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
 });
 
-export const siteQrCodes = sqliteTable("site_qr_codes", {
+export const siteQrCodes = customerConnect.table("site_qr_codes", {
   id: text("id").primaryKey(),
   destination: text("destination").notNull(),
   assetKey: text("asset_key").notNull(),
@@ -27,5 +29,5 @@ export const siteQrCodes = sqliteTable("site_qr_codes", {
   version: text("version").notNull(),
   mode: text("mode").notNull(),
   updatedBy: text("updated_by").notNull(),
-  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
 });

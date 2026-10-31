@@ -1,9 +1,11 @@
 import { eq } from "drizzle-orm";
+import { isDeepStrictEqual } from "node:util";
 import { getDb } from "@/db";
 import { customerSubmissions } from "@/db/schema";
 import { cleanSubmission, intakeSchema } from "@/lib/intake";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 const responseHeaders = { "Cache-Control": "no-store" };
 const reply = (body: unknown, status: number) => Response.json(body, { status, headers: responseHeaders });
 
@@ -29,7 +31,7 @@ export async function POST(request: Request) {
     const db = getDb();
     const existing = await db.select({ reference: customerSubmissions.reference, payload: customerSubmissions.payload }).from(customerSubmissions).where(eq(customerSubmissions.id, key)).limit(1);
     if (existing.length) {
-      if (JSON.stringify(existing[0].payload) !== JSON.stringify(data)) return reply({ error: "This request has already been sent. Start a new request to make changes." }, 409);
+      if (!isDeepStrictEqual(existing[0].payload, data)) return reply({ error: "This request has already been sent. Start a new request to make changes." }, 409);
       return reply({ reference: existing[0].reference }, 200);
     }
     const reference = `GARY-${key.replaceAll("-", "").slice(0, 12).toUpperCase()}`;
@@ -41,7 +43,7 @@ export async function POST(request: Request) {
     }).onConflictDoNothing({ target: customerSubmissions.id }).returning({ reference: customerSubmissions.reference });
     if (!inserted.length) {
       const [saved] = await db.select({ reference: customerSubmissions.reference, payload: customerSubmissions.payload }).from(customerSubmissions).where(eq(customerSubmissions.id, key)).limit(1);
-      if (!saved || JSON.stringify(saved.payload) !== JSON.stringify(data)) return reply({ error: "This request has already been sent. Start a new request to make changes." }, 409);
+      if (!saved || !isDeepStrictEqual(saved.payload, data)) return reply({ error: "This request has already been sent. Start a new request to make changes." }, 409);
       return reply({ reference: saved.reference }, 200);
     }
     return reply({ reference }, 201);

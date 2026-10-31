@@ -1,10 +1,9 @@
-import { env } from "cloudflare:workers";
 import { createClient } from "@supabase/supabase-js";
 
 export class StaffError extends Error {
   constructor(message: string, readonly status = 400, readonly code?: string) { super(message); }
 }
-export function staffPublicConfig(values: { SUPABASE_URL?: string; SUPABASE_PUBLISHABLE_KEY?: string } = env) {
+export function staffPublicConfig(values: { SUPABASE_URL?: string; SUPABASE_PUBLISHABLE_KEY?: string } = { SUPABASE_URL: process.env.SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY: process.env.SUPABASE_PUBLISHABLE_KEY }) {
   const url = values.SUPABASE_URL || ""; const key = values.SUPABASE_PUBLISHABLE_KEY || "";
   let publicKey = key.startsWith("sb_publishable_");
   if (!publicKey && key.split(".").length === 3) { try { publicKey = JSON.parse(atob(key.split(".")[1].replace(/-/g,"+").replace(/_/g,"/"))).role === "anon"; } catch { /* Reject secret or malformed keys. */ } }

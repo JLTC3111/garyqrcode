@@ -1,4 +1,4 @@
-import { env } from "cloudflare:workers";
+import { getQrStorage } from "@/lib/qr-storage";
 import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { siteQrCodes } from "@/db/schema";
@@ -6,6 +6,7 @@ import { MAX_QR_UPLOAD, QR_ID, normalizeQrDestination, qrSvg, validateQrPng } fr
 import { currentQrRecord, publicQr } from "@/lib/qr-store";
 import { requireGaryStaff, StaffError, staffErrorResponse } from "@/lib/staff-auth";
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
 
 async function boundedBody(request: Request, maximum: number) {
@@ -23,7 +24,7 @@ export async function POST(request: Request) {
   let newKey: string | null = null;
   try {
     const staff = await requireGaryStaff(request);
-    if (!env.BUCKET) throw new StaffError("QR storage is not available yet.", 503);
+    const storage = getQrStorage();
     const contentType = request.headers.get("content-type") || "";
     let destination: string; let expectedVersion: unknown; let bytes: Uint8Array; let mimeType: string; let mode: string;
     if (contentType.includes("application/json")) {
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
     const existing = await currentQrRecord();
     if ((existing?.version || "default") !== expectedVersion) throw new StaffError("The QR code changed. Reload it before saving your replacement.", 409);
     const version = crypto.randomUUID(); newKey = `qr/${version}.${mode === "upload" ? "png" : "svg"}`;
-    await env.BUCKET.put(newKey, bytes, { httpMetadata: { contentType: mimeType } });
+    await storage.put(newKey, bytes, mimeType);
     const record = { id: QR_ID, destination, assetKey: newKey, mimeType, version, mode, updatedBy: staff.userId, updatedAt: new Date() };
     const db = getDb();
     const saved = existing ? await db.update(siteQrCodes).set(record).where(and(eq(siteQrCodes.id, QR_ID), eq(siteQrCodes.version, expectedVersion))).returning() : await db.insert(siteQrCodes).values(record).onConflictDoNothing({ target: siteQrCodes.id }).returning();
@@ -53,7 +54,7 @@ export async function POST(request: Request) {
     newKey = null;
     return json({ qr: publicQr(saved[0]) });
   } catch (error) {
-    if (newKey) { try { await env.BUCKET?.delete(newKey); } catch { /* A failed cleanup never changes the saved QR pointer. */ } }
+    if (newKey) { try { await getQrStorage().delete(newKey); } catch { /* A failed cleanup never changes the saved QR pointer. */ } }
     return staffErrorResponse(error);
   }
 }
